@@ -239,7 +239,7 @@ router.get('/', (req, res) => {
     });
 });
 
-// 🎯 ROTA PÚBLICA: Buscar alimentos a partir de texto transcrito
+// 🎯 ROTA PÚBLICA: Buscar alimentos a partir de texto transcrito com IA Agent
 router.post('/alimento/buscar-por-transcricao', async (req, res) => {
     try {
         const { texto_transcrito, limite } = req.body;
@@ -256,39 +256,98 @@ router.post('/alimento/buscar-por-transcricao', async (req, res) => {
         }
 
         const limiteInt = parseInt(limite) || 10;
-        const textoLimpo = texto_transcrito.trim().toLowerCase();
+        const textoLimpo = texto_transcrito.trim();
         
-        console.log(`🔍 Buscando alimentos para transcrição: "${textoLimpo}"`);
+        console.log(`🔍 Processando transcrição com IA Agent: "${textoLimpo}"`);
         
-        // Usar a classe Alimento para fazer a busca
-        const alimento = new Alimento();
-        const result = await alimento.searchAlimentosIA(textoLimpo, limiteInt);
-        
-        // Adicionar informações extras na resposta
-        const response = {
-            ...result,
-            busca_realizada: {
-                texto_original: texto_transcrito,
-                texto_processado: textoLimpo,
-                limite_resultados: limiteInt,
-                timestamp: new Date().toISOString()
+        try {
+            // 1. USAR IA AGENT para extrair alimento e quantidade do texto transcrito
+            console.log(`🤖 Enviando para IA Agent: "${textoLimpo}"`);
+            const extracao = await iaService.extrairAlimentoEQuantidade(textoLimpo);
+            
+            if (!extracao.status) {
+                console.log(`❌ IA Agent falhou, usando busca simples`);
+                // Fallback: busca simples se IA Agent falhar
+                const alimento = new Alimento();
+                const result = await alimento.searchAlimentosIA(textoLimpo, limiteInt);
+                
+                return res.json({
+                    ...result,
+                    ia_agent_usado: false,
+                    busca_realizada: {
+                        texto_original: texto_transcrito,
+                        texto_processado: textoLimpo,
+                        limite_resultados: limiteInt,
+                        metodo: 'busca_simples_fallback',
+                        timestamp: new Date().toISOString()
+                    }
+                });
             }
-        };
-        
-        // Log para debug
-        if (result.status && result.alimentos) {
-            console.log(`✅ Encontrados ${result.alimentos.length} alimentos para: "${textoLimpo}"`);
-            result.alimentos.slice(0, 3).forEach((ali, idx) => {
-                console.log(`   ${idx + 1}. ${ali.nome} (${ali.calorias} kcal)`);
+            
+            console.log(`✅ IA Agent extraiu:`, extracao.dados);
+            
+            // 2. Buscar no banco usando o nome do alimento extraído pela IA
+            const alimento = new Alimento();
+            const alimentoExtraido = extracao.dados.nome.toLowerCase().trim();
+            
+            console.log(`🔍 Buscando no banco: "${alimentoExtraido}"`);
+            const result = await alimento.searchAlimentosIA(alimentoExtraido, limiteInt);
+            
+            // 3. Adicionar informações da IA Agent na resposta
+            const response = {
+                ...result,
+                ia_agent_usado: true,
+                ia_agent_resultado: {
+                    alimento_extraido: extracao.dados.nome,
+                    quantidade_extraida: extracao.dados.quantidade,
+                    confianca: extracao.dados.confianca || null,
+                    observacoes: extracao.dados.observacoes || null
+                },
+                busca_realizada: {
+                    texto_original: texto_transcrito,
+                    texto_processado: textoLimpo,
+                    termo_busca_final: alimentoExtraido,
+                    limite_resultados: limiteInt,
+                    metodo: 'ia_agent_extraction',
+                    timestamp: new Date().toISOString()
+                }
+            };
+            
+            // Log para debug
+            if (result.status && result.alimentos) {
+                console.log(`✅ Encontrados ${result.alimentos.length} alimentos para: "${alimentoExtraido}"`);
+                result.alimentos.slice(0, 3).forEach((ali, idx) => {
+                    console.log(`   ${idx + 1}. ${ali.nome} (${ali.calorias} kcal)`);
+                });
+            } else {
+                console.log(`❌ Nenhum alimento encontrado para: "${alimentoExtraido}"`);
+            }
+            
+            return res.json(response);
+            
+        } catch (iaError) {
+            console.error('❌ Erro na IA Agent, usando busca simples:', iaError.message);
+            
+            // Fallback: busca simples em caso de erro na IA
+            const alimento = new Alimento();
+            const result = await alimento.searchAlimentosIA(textoLimpo, limiteInt);
+            
+            return res.json({
+                ...result,
+                ia_agent_usado: false,
+                ia_agent_erro: iaError.message,
+                busca_realizada: {
+                    texto_original: texto_transcrito,
+                    texto_processado: textoLimpo,
+                    limite_resultados: limiteInt,
+                    metodo: 'busca_simples_erro_ia',
+                    timestamp: new Date().toISOString()
+                }
             });
-        } else {
-            console.log(`❌ Nenhum alimento encontrado para: "${textoLimpo}"`);
         }
         
-        return res.json(response);
-        
     } catch (error) {
-        console.error('❌ Erro na busca por transcrição:', error);
+        console.error('❌ Erro geral na busca por transcrição:', error);
         return res.status(500).json({ 
             error: 'Erro interno do servidor ao buscar alimentos',
             details: error.message 
@@ -360,145 +419,9 @@ router.get('/alimento/stats', async (req, res) => {
 });
 
 // ===== ROTAS DE IA E PROCESSAMENTO DE ÁUDIO =====
+// REMOVIDAS: As rotas de transcrição de áudio foram removidas.
+// Agora o Flutter faz transcrição local e envia apenas o texto transcrito.
 
-// Rota principal: Upload de áudio e processamento completo da refeição
-router.post('/ia/processar-audio-refeicao', authMiddleware, upload.single('audio'), async (req, res) => {
-    let arquivoAudio = null;
-    
-    try {
-        const { paciente_id, nutri_id, tipo_refeicao, observacoes } = req.body;
-        
-        if (!req.file) {
-            return res.status(400).json({ error: 'Arquivo de áudio é obrigatório' });
-        }
-        
-        if (!paciente_id || !nutri_id) {
-            return res.status(400).json({ error: 'paciente_id e nutri_id são obrigatórios' });
-        }        arquivoAudio = req.file;
-        console.log('🎤 Arquivo de áudio recebido:', {
-            originalname: arquivoAudio.originalname,
-            mimetype: arquivoAudio.mimetype,
-            size: arquivoAudio.size,
-            path: arquivoAudio.path,
-            fieldname: arquivoAudio.fieldname,
-            encoding: arquivoAudio.encoding
-        });
-
-        // Verificar se o arquivo foi salvo corretamente
-        if (!fs.existsSync(arquivoAudio.path)) {
-            console.error('❌ Arquivo não encontrado no caminho:', arquivoAudio.path);
-            return res.status(500).json({ 
-                error: 'Arquivo não foi salvo corretamente',
-                details: `Caminho: ${arquivoAudio.path}`
-            });
-        }
-
-        const stats = fs.statSync(arquivoAudio.path);
-        console.log('📊 Estatísticas do arquivo salvo:', {
-            tamanho: stats.size,
-            criado: stats.birthtime,
-            modificado: stats.mtime
-        });// 1. Transcrever áudio - CORREÇÃO: passar o objeto audioFile completo
-        const transcricao = await iaService.transcribeAudio(arquivoAudio);
-        
-        if (!transcricao.status) {
-            return res.status(500).json({ 
-                error: 'Erro na transcrição do áudio', 
-                details: transcricao.error 
-            });
-        }
-
-        // 2. Extrair alimento e quantidade
-        const extracao = await iaService.extrairAlimentoEQuantidade(transcricao.texto);
-        
-        if (!extracao.status) {
-            return res.status(500).json({ 
-                error: 'Erro na extração de informações', 
-                details: extracao.error,
-                transcricao: transcricao.texto
-            });
-        }
-
-        // 3. Calcular macros e registrar no banco
-        const opcoes = {
-            tipo_refeicao: tipo_refeicao || 'outro',
-            origem: 'ia_audio',
-            confianca_ia: extracao.dados.confianca,
-            transcricao_original: transcricao.texto,
-            observacoes: observacoes || null
-        };
-
-        const calculo = await macroCalculatorService.calcularMacrosRefeicao(
-            extracao.dados.nome,
-            extracao.dados.quantidade,
-            paciente_id,
-            nutri_id,
-            opcoes
-        );
-
-        if (!calculo.status) {
-            return res.status(500).json({ 
-                error: 'Erro no cálculo de macros', 
-                details: calculo.error,
-                transcricao: transcricao.texto,
-                extracao: extracao.dados
-            });
-        }
-
-        // 4. Obter resumo diário atualizado
-        const resumoDiario = await macroCalculatorService.getResumoDiario(paciente_id);
-
-        // 5. Resposta completa
-        const resposta = {
-            status: true,
-            processamento: {
-                transcricao: transcricao.texto,
-                alimento_extraido: extracao.dados,
-                calculo_macros: calculo,
-                resumo_diario: resumoDiario
-            },
-            message: 'Refeição processada e registrada com sucesso!'
-        };
-
-        res.json(resposta);
-
-    } catch (error) {
-        console.error('❌ Erro no processamento:', error.message);
-        res.status(500).json({ 
-            error: 'Erro interno no processamento', 
-            details: error.message 
-        });
-    } finally {
-        // Limpar arquivo temporário
-        if (arquivoAudio && fs.existsSync(arquivoAudio.path)) {
-            fs.unlinkSync(arquivoAudio.path);
-        }
-    }
-});
-
-// Rota para transcrição simples (sem processamento)
-router.post('/ia/transcrever-audio', authMiddleware, upload.single('audio'), async (req, res) => {
-    let arquivoAudio = null;
-    
-    try {
-        if (!req.file) {
-            return res.status(400).json({ error: 'Arquivo de áudio é obrigatório' });
-        }
-
-        arquivoAudio = req.file;
-        const transcricao = await iaService.transcribeAudio(fs.createReadStream(arquivoAudio.path));
-        
-        res.json(transcricao);
-
-    } catch (error) {
-        console.error('❌ Erro na transcrição:', error.message);
-        res.status(500).json({ error: 'Erro na transcrição', details: error.message });
-    } finally {
-        if (arquivoAudio && fs.existsSync(arquivoAudio.path)) {
-            fs.unlinkSync(arquivoAudio.path);
-        }
-    }
-});
 
 // Rota para extrair alimento de texto
 router.post('/ia/extrair-alimento', authMiddleware, async (req, res) => {
@@ -728,105 +651,7 @@ router.put('/dieta/desativar/:dieta_id/:paciente_id', authMiddleware, async (req
 });
 
 // ===== ROTAS DE IA E PROCESSAMENTO DE ÁUDIO (ATUALIZADAS) =====
-
-// Rota alternativa: Processar áudio enviado como base64 (para desktop/web)
-router.post('/ia/processar-audio-refeicao-base64', authMiddleware, async (req, res) => {
-    let arquivoTemporario = null;
-    
-    try {
-        const { audio_base64, paciente_id, nutri_id, tipo_refeicao, observacoes } = req.body;
-        
-        if (!audio_base64) {
-            return res.status(400).json({ error: 'audio_base64 é obrigatório' });
-        }
-          if (!paciente_id || !nutri_id) {
-            return res.status(400).json({ error: 'paciente_id e nutri_id são obrigatórios' });
-        }
-
-        // Converter base64 para arquivo temporário
-        const audioBuffer = Buffer.from(audio_base64, 'base64');
-        const tempPath = path.join(__dirname, '../uploads', `temp_audio_${Date.now()}.wav`);
-        fs.writeFileSync(tempPath, audioBuffer);
-        arquivoTemporario = tempPath;
-        
-        console.log('🎤 Arquivo de áudio base64 convertido:', tempPath);
-
-        // 1. Transcrever áudio
-        const transcricao = await iaService.transcribeAudio(fs.createReadStream(tempPath));
-        
-        if (!transcricao.status) {
-            return res.status(500).json({ 
-                error: 'Erro na transcrição do áudio', 
-                details: transcricao.error 
-            });
-        }
-
-        // 2. Extrair alimento e quantidade
-        const extracao = await iaService.extrairAlimentoEQuantidade(transcricao.texto);
-        
-        if (!extracao.status) {
-            return res.status(500).json({ 
-                error: 'Erro na extração de informações', 
-                details: extracao.error,
-                transcricao: transcricao.texto
-            });
-        }
-
-        // 3. Calcular macros e registrar no banco
-        const opcoes = {
-            tipo_refeicao: tipo_refeicao || 'outro',
-            origem: 'ia_audio_base64',
-            confianca_ia: extracao.dados.confianca,
-            transcricao_original: transcricao.texto,
-            observacoes: observacoes || null
-        };
-
-        const calculo = await macroCalculatorService.calcularMacrosRefeicao(
-            extracao.dados.nome,
-            extracao.dados.quantidade,
-            paciente_id,
-            nutri_id,
-            opcoes
-        );
-
-        if (!calculo.status) {
-            return res.status(500).json({ 
-                error: 'Erro no cálculo de macros', 
-                details: calculo.error,
-                transcricao: transcricao.texto,
-                extracao: extracao.dados
-            });
-        }
-
-        // 4. Obter resumo diário atualizado
-        const resumoDiario = await macroCalculatorService.getResumoDiario(paciente_id);
-
-        // 5. Resposta completa
-        const resposta = {
-            status: true,
-            processamento: {
-                transcricao: transcricao.texto,
-                alimento_extraido: extracao.dados,
-                calculo_macros: calculo,
-                resumo_diario: resumoDiario
-            },
-            message: 'Refeição processada e registrada com sucesso!'
-        };
-
-        res.json(resposta);
-
-    } catch (error) {
-        console.error('❌ Erro no processamento base64:', error.message);
-        res.status(500).json({ 
-            error: 'Erro interno no processamento', 
-            details: error.message 
-        });
-    } finally {
-        // Limpar arquivo temporário
-        if (arquivoTemporario && fs.existsSync(arquivoTemporario)) {
-            fs.unlinkSync(arquivoTemporario);
-        }
-    }
-});
+// REMOVIDAS: As rotas de transcrição de áudio foram removidas.
+// Agora o Flutter faz transcrição local e envia apenas o texto transcrito via /alimento/buscar-por-transcricao
 
 module.exports = router;
