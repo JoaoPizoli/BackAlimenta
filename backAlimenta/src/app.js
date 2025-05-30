@@ -11,6 +11,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Middleware de log para debug
+app.use((req, res, next) => {
+    console.log(`📡 ${new Date().toISOString()} - ${req.method} ${req.path}`);
+    if (req.body && Object.keys(req.body).length > 0) {
+        console.log('📦 Body:', JSON.stringify(req.body, null, 2));
+    }
+    next();
+});
+
 // Inicializar banco in-memory de alimentos
 async function initializeInMemoryDB() {
     try {
