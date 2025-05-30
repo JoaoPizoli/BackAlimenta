@@ -1,0 +1,21 @@
+codigo,nome,calorias,proteinas,carboidratos,gordura,fibra,calcio,ferro,sodio,categoria
+001,Arroz branco cozido,130,2.7,28.0,0.3,1.3,10,0.8,5,Cereais
+002,Feijão preto cozido,132,8.9,23.0,0.5,8.4,29,1.5,2,Leguminosas
+003,Frango grelhado sem pele,195,29.8,0.0,7.4,0,15,1.0,70,Carnes
+004,Banana nanica,89,1.1,23.0,0.3,2.6,5,0.3,1,Frutas
+005,Batata doce cozida,86,1.6,20.1,0.1,3.0,30,0.6,4,Tubérculos
+006,Ovo de galinha cozido,155,13.0,1.1,11.0,0,56,1.9,140,Ovos
+007,Leite integral,61,3.2,4.6,3.5,0,113,0.1,41,Laticínios
+008,Pão francês,300,9.4,58.6,3.1,2.3,40,1.4,659,Panificados
+009,Maçã com casca,52,0.3,13.8,0.2,2.4,6,0.2,1,Frutas
+010,Tomate,18,0.9,3.5,0.2,1.2,10,0.3,5,Hortaliças
+011,Alface lisa,15,1.4,2.9,0.2,2.0,40,0.4,9,Hortaliças
+012,Cenoura crua,43,1.3,10.5,0.2,3.2,35,0.6,35,Hortaliças
+013,Azeite de oliva,884,0,0,100,0,1,0.6,2,Óleos
+014,Açúcar cristal,387,0,99.9,0,0,1,0.1,1,Açúcares
+015,Salmão grelhado,208,20.4,0,13.4,0,12,0.8,82,Peixes
+016,Aveia em flocos,389,16.9,66.3,6.9,9.1,54,4.4,5,Cereais
+017,Iogurte natural,51,4.3,3.5,3.0,0,121,0.1,36,Laticínios
+018,Amendoim torrado,567,26.2,20.3,48.1,8.0,92,2.8,6,Oleaginosas
+019,Abacate,96,1.2,6.0,8.4,6.3,8,0.3,2,Frutas
+020,Quinoa cozida,120,4.4,21.3,1.9,2.8,17,1.5,7,Cereais
