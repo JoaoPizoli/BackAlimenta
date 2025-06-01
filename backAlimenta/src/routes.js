@@ -14,6 +14,7 @@ const RegistroDiario = require('./models/registroDiario');
 // Serviços para IA
 const iaService = require('./services/iaService');
 const MacroCalculatorService = require('./services/macroCalculatorService');
+const macroCalculatorService = new MacroCalculatorService();
 
 // Configuração do multer para upload de áudio - CORRIGIDA
 const uploadPath = path.join(__dirname, 'uploads');
@@ -293,17 +294,19 @@ router.post('/alimento/buscar-por-transcricao', async (req, res) => {
             console.log(`🔍 Buscando no banco: "${alimentoExtraido}"`);
             const result = await alimento.searchAlimentosIA(alimentoExtraido, limiteInt);
               // 3. 🧮 NOVO: Calcular macros baseado na quantidade detectada
-            let alimentosComMacros = result.alimentos;
-            if (result.status && result.alimentos && result.alimentos.length > 0) {
+            let alimentosComMacros = result.alimentos;            if (result.status && result.alimentos && result.alimentos.length > 0) {
                 console.log('\n🧮 ======= CALCULANDO MACROS =======');
                 
-                const macroCalculator = new MacroCalculatorService();
                 const alimentoPrincipal = result.alimentos[0];
-                
-                try {
-                    const calculoMacros = await macroCalculator.calcularMacrosComTexto(
-                        textoLimpo, 
-                        alimentoPrincipal
+                  try {
+                    // Use quantidade detectada pela IA em vez de detectar novamente
+                    const quantidadeIA = extracao.dados.quantidade;
+                    
+                    console.log(`🧮 Usando quantidade da IA: ${quantidadeIA}g`);
+                    
+                    const calculoMacros = await macroCalculatorService.calcularMacrosComQuantidadeIA(
+                        alimentoPrincipal,
+                        quantidadeIA
                     );
                     
                     if (calculoMacros.sucesso) {

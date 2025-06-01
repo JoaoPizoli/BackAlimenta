@@ -245,6 +245,53 @@ class MacroCalculatorService {
         }
     }
 
+    // 🆕 NOVO MÉTODO: Calcular macros com quantidade já detectada pela IA
+    async calcularMacrosComQuantidadeIA(dadosAlimento, quantidadeIA) {
+        try {
+            console.log('[MACRO_CALC] 🧮 Iniciando cálculo com quantidade da IA...');
+            console.log('[MACRO_CALC] 🥗 Alimento:', dadosAlimento.nome);
+            console.log('[MACRO_CALC] 📏 Quantidade da IA:', quantidadeIA + 'g');
+
+            // Usa a quantidade detectada pela IA
+            const quantidadeDetectada = {
+                valor_original: quantidadeIA + 'g',
+                valor_numerico: quantidadeIA,
+                unidade: 'g',
+                quantidade_final: quantidadeIA,
+                fator_multiplicacao: quantidadeIA / 100,
+                confianca: 85, // Alta confiança pois veio da IA
+                metodo: 'ia_detection'
+            };
+            
+            // Calcula os macros baseado na quantidade
+            const macrosCalculados = this.aplicarQuantidade(dadosAlimento, quantidadeDetectada);
+
+            console.log('[MACRO_CALC] ✅ Cálculo concluído:', {
+                quantidade_detectada: quantidadeDetectada,
+                macros_originais: `${dadosAlimento.calorias}kcal (100g)`,
+                macros_calculados: `${macrosCalculados.calorias}kcal (${quantidadeDetectada.quantidade_final}g)`
+            });
+
+            return {
+                quantidade_detectada: quantidadeDetectada,
+                macros_originais: this.extrairMacrosOriginais(dadosAlimento),
+                macros_calculados: macrosCalculados,
+                sucesso: true
+            };
+
+        } catch (error) {
+            console.error('[MACRO_CALC] ❌ Erro no cálculo:', error);
+            // Retorna dados originais em caso de erro
+            return {
+                quantidade_detectada: { valor: 100, unidade: 'g', fator_multiplicacao: 1 },
+                macros_originais: this.extrairMacrosOriginais(dadosAlimento),
+                macros_calculados: this.extrairMacrosOriginais(dadosAlimento),
+                sucesso: false,
+                erro: error.message
+            };
+        }
+    }
+
     extrairQuantidade(textoTranscrito) {
         console.log('[MACRO_CALC] 🔍 Extraindo quantidade do texto:', textoTranscrito);
 
@@ -313,13 +360,26 @@ class MacroCalculatorService {
             confianca: 30,
             metodo: 'fallback_100g'
         };
-    }
-
-    converterNumeroTexto(texto) {
+    }    converterNumeroTexto(texto) {
         const numeros = {
+            // Números básicos
             'uma': 1, 'um': 1, 'dois': 2, 'duas': 2, 'três': 3, 'tres': 3,
             'quatro': 4, 'cinco': 5, 'seis': 6, 'sete': 7, 'oito': 8,
-            'nove': 9, 'dez': 10, 'meia': 0.5, 'meio': 0.5
+            'nove': 9, 'dez': 10, 'meia': 0.5, 'meio': 0.5,
+            
+            // Dezenas
+            'vinte': 20, 'trinta': 30, 'quarenta': 40, 'cinquenta': 50,
+            'sessenta': 60, 'setenta': 70, 'oitenta': 80, 'noventa': 90,
+            
+            // Centenas
+            'cem': 100, 'cento': 100, 'duzentos': 200, 'trezentos': 300,
+            'quatrocentos': 400, 'quinhentos': 500, 'seiscentos': 600,
+            'setecentos': 700, 'oitocentos': 800, 'novecentos': 900,
+            
+            // Números específicos comuns em alimentação
+            'quinze': 15, 'vinte e cinco': 25, 'cinquenta': 50,
+            'setenta e cinco': 75, 'cem': 100, 'cento e cinquenta': 150,
+            'duzentos': 200, 'duzentos e cinquenta': 250, 'trezentos': 300
         };
         return numeros[texto?.toLowerCase()] || null;
     }
@@ -401,4 +461,4 @@ class MacroCalculatorService {
     }
 }
 
-module.exports = new MacroCalculatorService();
+module.exports = MacroCalculatorService;

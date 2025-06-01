@@ -169,33 +169,60 @@ class AlimentoInMemoryService {
         this.insertAlimentos(sampleAlimentos)
             .then(() => console.log('✅ Dados de exemplo criados!'))
             .catch(err => console.error('Erro ao criar dados de exemplo:', err));
-    }
-
-    async searchAlimentos(query, limit = 10) {
+    }    async searchAlimentos(query, limit = 10) {
         return new Promise((resolve, reject) => {
             if (!this.isInitialized) {
                 reject(new Error('Banco in-memory não inicializado'));
                 return;
             }
 
+            // Limpar e preparar o termo de busca
+            const queryLimpo = query.toLowerCase().trim();
+            const palavras = queryLimpo.split(' ').filter(p => p.length > 2);
+            
+            console.log(`🔍 Buscando por: "${queryLimpo}" (palavras: ${palavras.join(', ')})`);
+
+            // Construir SQL mais flexível com múltiplas condições LIKE
+            let conditions = [];
+            let params = [];
+            
+            // Para cada palavra, adicionar condição LIKE
+            palavras.forEach(palavra => {
+                conditions.push('nome LIKE ?');
+                params.push(`%${palavra}%`);
+            });
+            
+            // Se não há palavras válidas, usar termo original
+            if (conditions.length === 0) {
+                conditions.push('nome LIKE ?');
+                params.push(`%${queryLimpo}%`);
+            }
+            
+            const whereClause = conditions.join(' OR ');
+            params.push(limit);
+
             const sql = `
                 SELECT * FROM alimentos 
-                WHERE nome LIKE ? OR categoria LIKE ?
+                WHERE ${whereClause}
                 ORDER BY 
                     CASE 
-                        WHEN nome LIKE ? THEN 1
-                        WHEN nome LIKE ? THEN 2
+                        WHEN LOWER(nome) LIKE ? THEN 1
+                        WHEN LOWER(nome) LIKE ? THEN 2
                         ELSE 3
                     END,
                     nome
                 LIMIT ?
             `;
 
-            const searchTerm = `%${query}%`;
-            const exactStart = `${query}%`;
+            // Adicionar parâmetros para ORDER BY
+            const finalParams = [...params.slice(0, -1), `${queryLimpo}%`, `%${queryLimpo}%`, limit];
 
-            this.db.all(sql, [searchTerm, searchTerm, exactStart, searchTerm, limit], (err, rows) => {
+            console.log(`🔍 SQL: ${sql}`);
+            console.log(`🔍 Parâmetros:`, finalParams);
+
+            this.db.all(sql, finalParams, (err, rows) => {
                 if (err) {
+                    console.error('❌ Erro na busca SQL:', err);
                     reject(err);
                 } else {
                     resolve(rows);

@@ -5,7 +5,20 @@ const path = require('path');
 class IAService {
     constructor() {
         // ATENÇÃO: Esta chave está exposta! Mova para variável de ambiente
-        this.openai = new OpenAI({
+        th            console.log(`${logPrefix} 🔄 Tentando método de fallback (regex)...`);
+            
+            // Fallback: tentar extração simples com regex
+            try {
+                const fallback = await this.extrairComRegex(texto);
+                if (fallback.status) {
+                    console.log(`${logPrefix} ✅ Fallback bem-sucedido!`);
+                    return fallback;
+                } else {
+                    console.log(`${logPrefix} ❌ Fallback também falhou`);
+                }
+            } catch (fallbackError) {
+                console.error(`${logPrefix} ❌ Erro no fallback:`, fallbackError.message);
+            }w OpenAI({
             apiKey: "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"
         });
     }    // MÉTODO DE TRANSCRIÇÃO REMOVIDO
@@ -47,42 +60,41 @@ class IAService {
             console.log(`${logPrefix} ✅ Validação de entrada OK`, {
                 texto_limpo: textoLimpo,
                 tamanho_final: textoLimpo.length
-            });
-
-            // Preparar prompt otimizado
+            });            // Preparar prompt otimizado
             const prompt = `
-Você é um especialista em nutrição. Analise o texto abaixo e extraia as informações sobre alimentos consumidos.
+Você é um especialista em nutrição. Analise o texto abaixo e extraia APENAS o nome do alimento consumido.
 
-REGRAS:
-1. Identifique APENAS o nome do alimento principal (sem quantidades no nome)
-2. Identifique a quantidade consumida em gramas
-3. Se não mencionar quantidade, assuma 100g
-4. Se mencionar "1 unidade", "1 fatia", etc., converta para gramas usando valores padrão
-5. Responda SEMPRE no formato JSON exato abaixo
-6. Use nomes simples e limpos para os alimentos
-7. Considere sinônimos e variações regionais
+REGRAS IMPORTANTES:
+1. Extraia SOMENTE o nome do alimento (ex: "arroz", "banana", "pão")
+2. NÃO inclua quantidades, verbos ou outras palavras no nome
+3. Use nomes genéricos encontrados em tabelas nutricionais (TACO)
+4. Identifique a quantidade em gramas separadamente
+5. Responda SEMPRE no formato JSON exato
 
-CONVERSÕES PADRÃO:
-- 1 banana média = 120g
-- 1 fatia de pão = 25g
-- 1 ovo = 50g
-- 1 xícara de arroz = 150g
-- 1 colher de sopa = 15g
-- 1 copo (200ml) = 200g
-- 1 prato de comida = 300g
-- 1 porção = 150g
+CONVERSÕES DE QUANTIDADE:
+- "cinquenta gramas" = 50g
+- "duas fatias" = 50g (25g cada)
+- "uma xícara" = 150g
+- "um copo" = 200g
+- "uma banana" = 120g
+- "um ovo" = 50g
 
-FORMATO DE RESPOSTA (JSON):
+EXEMPLOS:
+"Eu comi cinquenta gramas de arroz" → {"nome": "arroz", "quantidade": 50}
+"Comi duas bananas hoje" → {"nome": "banana", "quantidade": 240}
+"Uma fatia de pão francês" → {"nome": "pão francês", "quantidade": 25}
+
+FORMATO DE RESPOSTA:
 {
-  "nome": "nome_do_alimento_limpo",
+  "nome": "nome_simples_do_alimento",
   "quantidade": numero_em_gramas,
   "confianca": numero_de_0_a_100,
-  "observacoes": "detalhes_adicionais_se_necessario"
+  "observacoes": "detalhes_se_necessario"
 }
 
-TEXTO PARA ANALISAR: "${textoLimpo}"
+TEXTO: "${textoLimpo}"
 
-IMPORTANTE: Responda APENAS com o JSON válido, sem texto adicional.`;
+Responda APENAS com JSON válido:`;
 
             console.log(`${logPrefix} 📤 Configuração para OpenAI:`, {
                 modelo: "gpt-4o-mini",
@@ -246,67 +258,55 @@ IMPORTANTE: Responda APENAS com o JSON válido, sem texto adicional.`;
                 }
             };
         }
-    }
-
-    extrairComRegex(texto) {
-        const logPrefix = '[REGEX_FALLBACK]';
+    }    async extrairComRegex(texto) {
+        const logPrefix = '[HYBRID_FALLBACK]';
         
         try {
-            console.log(`${logPrefix} 🔄 Tentando extração com regex...`);
-            console.log(`${logPrefix} 📝 Texto para regex:`, texto);
+            console.log(`${logPrefix} 🔄 Tentando extração híbrida (IA + regex)...`);
+            console.log(`${logPrefix} 📝 Texto para processamento:`, texto);
             
             const textoLimpo = texto.toLowerCase().trim();
             
-            // Regex melhorada para encontrar quantidades
-            const regexQuantidade = /(\d+(?:[.,]\d+)?)\s*(g|gramas?|kg|quilos?|unidades?|fatias?|copos?|xícaras?|colheres?)/i;
-            const matchQuantidade = textoLimpo.match(regexQuantidade);
-            
-            console.log(`${logPrefix} 🔍 Match quantidade:`, matchQuantidade);
-            
+            // 1. PRIMEIRA TENTATIVA: Usar IA para interpretar quantidade
             let quantidade = 100; // padrão
-            if (matchQuantidade) {
-                let valor = parseFloat(matchQuantidade[1].replace(',', '.'));
-                const unidade = matchQuantidade[2].toLowerCase();
-                
-                console.log(`${logPrefix} 📊 Valor: ${valor}, Unidade: ${unidade}`);
-                
-                // Conversões baseadas na unidade
-                if (unidade.includes('kg') || unidade.includes('quilo')) {
-                    quantidade = valor * 1000;
-                } else if (unidade.includes('unidade')) {
-                    quantidade = valor * 120; // assumindo banana média
-                } else if (unidade.includes('fatia')) {
-                    quantidade = valor * 25; // fatia de pão
-                } else if (unidade.includes('copo')) {
-                    quantidade = valor * 200;
-                } else if (unidade.includes('xícara')) {
-                    quantidade = valor * 150;
-                } else if (unidade.includes('colher')) {
-                    quantidade = valor * 15;
-                } else {
-                    quantidade = valor; // já em gramas
+            
+            try {
+                console.log(`${logPrefix} 🤖 Tentando interpretação com IA...`);
+                quantidade = await this.interpretarQuantidadeComIA(texto);
+                console.log(`${logPrefix} ✅ IA detectou quantidade: ${quantidade}g`);
+            } catch (iaError) {
+                console.log(`${logPrefix} ⚠️ IA falhou, usando regex como backup:`, iaError.message);
+                // Fallback para regex se IA não funcionar
+                quantidade = this.interpretarQuantidadeComRegex(texto);
+            }            
+            // 2. EXTRAIR NOME DO ALIMENTO usando regex simples
+            let nome = null;
+            
+            // Padrões simples para extrair nome do alimento
+            const padroesSimplesAlimento = [
+                /(?:de\s+)([a-záàâãéèêíìîóòôõúùûç]+(?:\s+[a-záàâãéèêíìîóòôõúùûç]+)*)/i,
+                /(?:comi\s+(?:\d+\s*\w*\s+(?:de\s+)?)?)(banana|arroz|pão|feijão|frango|ovo|maçã|leite|queijo|tomate|batata|carne)/i,
+                /(banana|arroz|pão|feijão|frango|ovo|maçã|leite|queijo|tomate|batata|carne)/i
+            ];
+            
+            for (const padrao of padroesSimplesAlimento) {
+                const match = textoLimpo.match(padrao);
+                if (match) {
+                    nome = match[1] || match[0];
+                    console.log(`${logPrefix} 🎯 Alimento encontrado: "${nome}"`);
+                    break;
                 }
-                
-                console.log(`${logPrefix} ⚖️ Quantidade convertida: ${quantidade}g`);
             }
-
-            // Tentar extrair nome do alimento
-            let nome = textoLimpo
-                .replace(/\d+(?:[.,]\d+)?\s*(g|gramas?|kg|quilos?|unidades?|fatias?|copos?|xícaras?|colheres?)/gi, '')
-                .replace(/[^\w\sáàâãéèêíìîóòôõúùûç]/g, '')
-                .replace(/\s+/g, ' ')
-                .trim();
-
-            console.log(`${logPrefix} 🏷️ Nome extraído inicialmente: "${nome}"`);
-
-            // Se nome muito curto, tentar palavras-chave comuns
-            if (nome.length < 3) {
-                const palavrasComuns = ['banana', 'pão', 'arroz', 'feijão', 'frango', 'ovo'];
-                const palavraEncontrada = palavrasComuns.find(palavra => 
-                    textoLimpo.includes(palavra)
-                );
-                if (palavraEncontrada) {
-                    nome = palavraEncontrada;
+            
+            // Se não encontrou, usar lista de palavras-chave
+            if (!nome) {
+                const alimentosComuns = [
+                    'arroz', 'feijão', 'pão', 'banana', 'maçã', 'frango', 'carne', 'ovo',
+                    'leite', 'queijo', 'tomate', 'batata', 'alface', 'cenoura', 'massa'
+                ];
+                  nome = alimentosComuns.find(alimento => textoLimpo.includes(alimento));
+                
+                if (nome) {
                     console.log(`${logPrefix} 🎯 Palavra-chave encontrada: "${nome}"`);
                 }
             }
@@ -339,6 +339,103 @@ IMPORTANTE: Responda APENAS com o JSON válido, sem texto adicional.`;
                 }
             };
         }
+    }
+
+    // Método específico para interpretar quantidades usando LLM
+    async interpretarQuantidadeComIA(texto) {
+        const logPrefix = '[QUANTIDADE_IA]';
+        
+        try {
+            console.log(`${logPrefix} 🤖 Interpretando quantidade com IA...`);
+            console.log(`${logPrefix} 📝 Texto: "${texto}"`);
+
+            const prompt = `
+Você é um especialista em interpretar quantidades de alimentos. Analise o texto e extraia APENAS a quantidade em gramas.
+
+REGRAS:
+1. Converta TUDO para gramas (g)
+2. Use as conversões padrão abaixo
+3. Responda APENAS com um número (sem texto, sem "g")
+4. Se não conseguir identificar, responda "100"
+
+CONVERSÕES PADRÃO:
+- "um(a)", "uma", "1" = varia por alimento
+- "dois", "duas", "2" = dobro da unidade
+- "meio", "metade" = 50g padrão
+- "cinquenta" = 50
+- "cem", "100" = 100  
+- "cento e cinquenta" = 150
+- "duzentos", "200" = 200
+- "trezentos" = 300
+- "meio quilo" = 500
+- "um quilo" = 1000
+
+UNIDADES ESPECÍFICAS:
+- "colher de sopa", "colher" = 15g por unidade
+- "colheres" = 15g × quantidade
+- "xícara", "xícaras" = 120g por unidade
+- "copo", "copos" = 240g por unidade
+- "fatia", "fatias" de pão = 25g por unidade
+- "fatia", "fatias" queijo = 20g por unidade
+- "unidade" banana = 120g
+- "unidade" ovo = 50g
+- "unidade" maçã = 150g
+- "porção", "prato" = 100g padrão
+
+EXEMPLOS:
+"cinquenta gramas de arroz" → 50
+"duas colheres de feijão" → 30
+"uma fatia de pão" → 25
+"três bananas" → 360
+"duzentos gramas de frango" → 200
+"meio copo de leite" → 120
+"uma xícara de arroz" → 120
+
+TEXTO: "${texto}"
+
+Responda APENAS com o número em gramas:`;
+
+            const completion = await this.openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                    {
+                        role: "system", 
+                        content: "Você é um especialista em converter quantidades de alimentos para gramas. Responda SEMPRE apenas com um número, sem texto adicional."
+                    },
+                    {
+                        role: "user",
+                        content: prompt
+                    }
+                ],
+                temperature: 0.1,
+                max_tokens: 50
+            });
+
+            const resposta = completion.choices[0].message.content.trim();
+            const quantidade = parseInt(resposta);
+            
+            console.log(`${logPrefix} 📊 IA respondeu: "${resposta}" → ${quantidade}g`);
+            
+            if (isNaN(quantidade) || quantidade <= 0) {
+                console.log(`${logPrefix} ⚠️ Resposta inválida, usando padrão 100g`);
+                return 100;
+            }
+            
+            return quantidade;
+            
+        } catch (error) {
+            console.error(`${logPrefix} ❌ Erro na interpretação:`, error.message);
+            // Fallback para regex se IA falhar
+            return this.interpretarQuantidadeComRegex(texto);
+        }
+    }
+
+    // Método de fallback usando regex (mantido como backup)
+    interpretarQuantidadeComRegex(texto) {
+        const logPrefix = '[QUANTIDADE_REGEX]';
+        console.log(`${logPrefix} 🔄 Usando fallback regex para: "${texto}"`);
+        
+        // ...existing code...
     }
 
     // Método auxiliar para limpar arquivos temporários
