@@ -13,7 +13,7 @@ const RegistroDiario = require('./models/registroDiario');
 
 // Serviços para IA
 const iaService = require('./services/iaService');
-const macroCalculatorService = require('./services/macroCalculatorService');
+const MacroCalculatorService = require('./services/macroCalculatorService');
 
 // Configuração do multer para upload de áudio - CORRIGIDA
 const uploadPath = path.join(__dirname, 'uploads');
@@ -292,10 +292,44 @@ router.post('/alimento/buscar-por-transcricao', async (req, res) => {
             
             console.log(`🔍 Buscando no banco: "${alimentoExtraido}"`);
             const result = await alimento.searchAlimentosIA(alimentoExtraido, limiteInt);
-            
-            // 3. Adicionar informações da IA Agent na resposta
+              // 3. 🧮 NOVO: Calcular macros baseado na quantidade detectada
+            let alimentosComMacros = result.alimentos;
+            if (result.status && result.alimentos && result.alimentos.length > 0) {
+                console.log('\n🧮 ======= CALCULANDO MACROS =======');
+                
+                const macroCalculator = new MacroCalculatorService();
+                const alimentoPrincipal = result.alimentos[0];
+                
+                try {
+                    const calculoMacros = await macroCalculator.calcularMacrosComTexto(
+                        textoLimpo, 
+                        alimentoPrincipal
+                    );
+                    
+                    if (calculoMacros.sucesso) {
+                        // Substitui o primeiro alimento com os macros calculados
+                        alimentosComMacros[0] = {
+                            ...calculoMacros.macros_calculados,
+                            informacoes_calculo: {
+                                quantidade_detectada: calculoMacros.quantidade_detectada,
+                                macros_originais: calculoMacros.macros_originais
+                            }
+                        };
+                        
+                        console.log('✅ Macros calculados e aplicados!');
+                        console.log(`📊 Resultado: ${calculoMacros.macros_calculados.calorias}kcal para ${calculoMacros.quantidade_detectada.quantidade_final}g`);
+                    }
+                    
+                } catch (calcError) {
+                    console.error('❌ Erro no cálculo de macros:', calcError);
+                    // Continua com os dados originais se o cálculo falhar
+                }
+            }
+
+            // 4. Adicionar informações da IA Agent na resposta
             const response = {
                 ...result,
+                alimentos: alimentosComMacros,
                 ia_agent_usado: true,
                 ia_agent_resultado: {
                     alimento_extraido: extracao.dados.nome,
