@@ -5,23 +5,11 @@ const path = require('path');
 class IAService {
     constructor() {
         // ATENÇÃO: Esta chave está exposta! Mova para variável de ambiente
-        th            console.log(`${logPrefix} 🔄 Tentando método de fallback (regex)...`);
-            
-            // Fallback: tentar extração simples com regex
-            try {
-                const fallback = await this.extrairComRegex(texto);
-                if (fallback.status) {
-                    console.log(`${logPrefix} ✅ Fallback bem-sucedido!`);
-                    return fallback;
-                } else {
-                    console.log(`${logPrefix} ❌ Fallback também falhou`);
-                }
-            } catch (fallbackError) {
-                console.error(`${logPrefix} ❌ Erro no fallback:`, fallbackError.message);
-            }w OpenAI({
-            apiKey: "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"
-        });
-    }    // MÉTODO DE TRANSCRIÇÃO REMOVIDO
+        this.openai = new OpenAI({
+            apiKey: "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"        });
+    }
+
+    // MÉTODO DE TRANSCRIÇÃO REMOVIDO
     // A transcrição agora é feita diretamente no Flutter usando OpenAI
     // Este serviço agora é responsável apenas pela extração de informações do texto transcrito
 
@@ -256,9 +244,10 @@ Responda APENAS com JSON válido:`;
                     metodo_fallback_tentado: true,
                     timestamp: new Date().toISOString()
                 }
-            };
-        }
-    }    async extrairComRegex(texto) {
+            };        }
+    }
+
+    async extrairComRegex(texto) {
         const logPrefix = '[HYBRID_FALLBACK]';
         
         try {
@@ -426,8 +415,7 @@ Responda APENAS com o número em gramas:`;
         } catch (error) {
             console.error(`${logPrefix} ❌ Erro na interpretação:`, error.message);
             // Fallback para regex se IA falhar
-            return this.interpretarQuantidadeComRegex(texto);
-        }
+            return this.interpretarQuantidadeComRegex(texto);        }
     }
 
     // Método de fallback usando regex (mantido como backup)
@@ -435,7 +423,54 @@ Responda APENAS com o número em gramas:`;
         const logPrefix = '[QUANTIDADE_REGEX]';
         console.log(`${logPrefix} 🔄 Usando fallback regex para: "${texto}"`);
         
-        // ...existing code...
+        const textoLimpo = texto.toLowerCase().trim();
+        
+        // Regex para números por extenso
+        const numerosTexto = {
+            'um': 1, 'uma': 1, 'dois': 2, 'duas': 2, 'três': 3, 'tres': 3,
+            'quatro': 4, 'cinco': 5, 'seis': 6, 'sete': 7, 'oito': 8, 'nove': 9,
+            'dez': 10, 'quinze': 15, 'vinte': 20, 'trinta': 30, 'quarenta': 40,
+            'cinquenta': 50, 'sessenta': 60, 'setenta': 70, 'oitenta': 80,
+            'noventa': 90, 'cem': 100, 'duzentos': 200, 'trezentos': 300
+        };
+        
+        // Procurar por números por extenso
+        for (const [palavra, valor] of Object.entries(numerosTexto)) {
+            if (textoLimpo.includes(palavra)) {
+                console.log(`${logPrefix} 📊 Encontrado "${palavra}" = ${valor}`);
+                
+                // Verificar unidades
+                if (textoLimpo.includes('grama')) {
+                    return valor;
+                } else if (textoLimpo.includes('colher')) {
+                    return valor * 15;
+                } else if (textoLimpo.includes('xícara') || textoLimpo.includes('xicara')) {
+                    return valor * 120;
+                } else if (textoLimpo.includes('copo')) {
+                    return valor * 240;
+                } else if (textoLimpo.includes('fatia')) {
+                    return valor * 25;
+                } else {
+                    return valor; // assume gramas
+                }
+            }
+        }
+        
+        // Regex para números diretos
+        const match = textoLimpo.match(/(\d+)\s*(g|gramas?|kg|colher|fatia|copo)/i);
+        if (match) {
+            const valor = parseInt(match[1]);
+            const unidade = match[2].toLowerCase();
+            
+            if (unidade.includes('kg')) return valor * 1000;
+            if (unidade.includes('colher')) return valor * 15;
+            if (unidade.includes('fatia')) return valor * 25;
+            if (unidade.includes('copo')) return valor * 240;
+            return valor;
+        }
+        
+        console.log(`${logPrefix} ⚠️ Não conseguiu detectar quantidade, usando 100g`);
+        return 100;
     }
 
     // Método auxiliar para limpar arquivos temporários
