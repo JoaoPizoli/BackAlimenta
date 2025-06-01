@@ -10,6 +10,7 @@ const Paciente = require('./models/paciente');
 const Alimento = require('./models/alimento');
 const Dieta = require('./models/dieta');
 const RegistroDiario = require('./models/registroDiario');
+const RegistroAlimentoDetalhado = require('./models/registroAlimentoDetalhado');
 
 // Serviços para IA
 const iaService = require('./services/iaService');
@@ -392,6 +393,155 @@ router.post('/alimento/buscar-por-transcricao', async (req, res) => {
     }
 });
 
+// ===== ROTAS DE ALIMENTOS (SEM AUTENTICAÇÃO PARA TESTE) =====
+
+// Rota para calcular macros sem autenticação (para testes)
+router.post('/alimentos/calcular-macros', async (req, res) => {
+    try {
+        const { 
+            nome_alimento, 
+            quantidade, 
+            paciente_id, 
+            nutri_id, 
+            tipo_refeicao, 
+            observacoes 
+        } = req.body;
+        
+        if (!nome_alimento || !quantidade || !paciente_id || !nutri_id) {
+            return res.status(400).json({ 
+                error: 'nome_alimento, quantidade, paciente_id e nutri_id são obrigatórios' 
+            });
+        }
+
+        const opcoes = {
+            tipo_refeicao: tipo_refeicao || 'outro',
+            origem: 'manual',
+            observacoes: observacoes || null
+        };
+
+        const resultado = await macroCalculatorService.calcularMacrosRefeicao(
+            nome_alimento, 
+            quantidade, 
+            paciente_id, 
+            nutri_id,
+            opcoes
+        );
+        
+        // Incluir resumo diário se o registro foi criado com sucesso
+        if (resultado.status) {
+            const resumoDiario = await macroCalculatorService.getResumoDiario(paciente_id);
+            resultado.resumo_diario = resumoDiario;
+        }
+        
+        res.json(resultado);
+
+    } catch (error) {
+        console.error('❌ Erro no cálculo:', error.message);
+        res.status(500).json({ error: 'Erro no cálculo', details: error.message });
+    }
+});
+
+// Buscar todos os alimentos detalhados por data (para persistência)
+router.get('/alimentos-detalhados/data/:paciente_id', async (req, res) => {
+    try {
+        const { paciente_id } = req.params;
+        const { data } = req.query;
+        
+        const registroDetalhado = new RegistroAlimentoDetalhado();
+        const result = await registroDetalhado.buscarAlimentosPorData(paciente_id, data);
+        
+        if (result.status) {
+            console.log(`✅ Encontrados ${result.total_itens} alimentos para ${data || 'hoje'}`);
+            
+            // Calcular totais por refeição para o Flutter
+            const totaisPorRefeicao = {};
+            Object.keys(result.refeicoes).forEach(tipoRefeicao => {
+                const alimentos = result.refeicoes[tipoRefeicao];
+                totaisPorRefeicao[tipoRefeicao] = {
+                    total_calorias: alimentos.reduce((sum, item) => sum + (parseFloat(item.calorias_item) || 0), 0),
+                    total_proteinas: alimentos.reduce((sum, item) => sum + (parseFloat(item.proteinas_item) || 0), 0),
+                    total_carboidratos: alimentos.reduce((sum, item) => sum + (parseFloat(item.carboidratos_item) || 0), 0),
+                    total_gordura: alimentos.reduce((sum, item) => sum + (parseFloat(item.gordura_item) || 0), 0),
+                    alimentos: alimentos
+                };
+            });
+            
+            // Calcular totais gerais do dia
+            const totaisGerais = {
+                total_calorias: Object.values(totaisPorRefeicao).reduce((sum, refeicao) => sum + refeicao.total_calorias, 0),
+                total_proteinas: Object.values(totaisPorRefeicao).reduce((sum, refeicao) => sum + refeicao.total_proteinas, 0),
+                total_carboidratos: Object.values(totaisPorRefeicao).reduce((sum, refeicao) => sum + refeicao.total_carboidratos, 0),
+                total_gordura: Object.values(totaisPorRefeicao).reduce((sum, refeicao) => sum + refeicao.total_gordura, 0)
+            };
+            
+            return res.json({
+                status: true,
+                data: {
+                    data: result.data,
+                    paciente_id: result.paciente_id,
+                    total_itens: result.total_itens,
+                    totais_gerais: totaisGerais,
+                    refeicoes: totaisPorRefeicao,
+                    alimentos: result.refeicoes // manter compatibilidade
+                }
+            });
+        }
+        
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Erro ao buscar alimentos detalhados:', error.message);
+        res.status(500).json({ error: 'Erro interno', details: error.message });
+    }
+});
+
+// Buscar alimentos de uma refeição específica
+router.get('/alimentos-detalhados/refeicao/:paciente_id', async (req, res) => {
+    try {
+        const { paciente_id } = req.params;
+        const { tipo_refeicao, data } = req.query;
+        
+        const registroDetalhado = new RegistroAlimentoDetalhado();
+        const result = await registroDetalhado.buscarAlimentosPorRefeicao(paciente_id, tipo_refeicao, data);
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Erro ao buscar alimentos da refeição:', error.message);
+        res.status(500).json({ error: 'Erro interno', details: error.message });
+    }
+});
+
+// Remover um alimento específico
+router.delete('/alimentos-detalhados/:registro_id', async (req, res) => {
+    try {
+        const { registro_id } = req.params;
+        const { paciente_id } = req.query;
+        
+        if (!paciente_id) {
+            return res.status(400).json({ error: 'paciente_id é obrigatório' });
+        }
+        
+        const registroDetalhado = new RegistroAlimentoDetalhado();
+        const result = await registroDetalhado.removerAlimento(registro_id, paciente_id);
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Erro ao remover alimento:', error.message);
+        res.status(500).json({ error: 'Erro interno', details: error.message });
+    }
+});
+
+// Buscar resumo diário
+router.get('/resumo-diario/:paciente_id', async (req, res) => {
+    try {
+        const { paciente_id } = req.params;
+        const { data } = req.query;
+        
+        const resumoDiario = await macroCalculatorService.getResumoDiario(paciente_id, data);
+        res.json(resumoDiario);
+    } catch (error) {
+        console.error('❌ Erro ao buscar resumo diário:', error.message);
+        res.status(500).json({ error: 'Erro interno', details: error.message });
+    }
+});
+
 // Rotas protegidas
 router.use(authMiddleware);
 
@@ -690,5 +840,66 @@ router.put('/dieta/desativar/:dieta_id/:paciente_id', authMiddleware, async (req
 // ===== ROTAS DE IA E PROCESSAMENTO DE ÁUDIO (ATUALIZADAS) =====
 // REMOVIDAS: As rotas de transcrição de áudio foram removidas.
 // Agora o Flutter faz transcrição local e envia apenas o texto transcrito via /alimento/buscar-por-transcricao
+
+// ===== ROTAS DE REGISTROS DETALHADOS POR ALIMENTO =====
+
+// Buscar todos os alimentos consumidos em uma data específica (NOVA ROTA PARA RESOLVER PROBLEMA)
+router.get('/registros-detalhados/:paciente_id/:data?', authMiddleware, async (req, res) => {
+    try {
+        const { paciente_id, data } = req.params;
+        const registroDetalhado = new RegistroAlimentoDetalhado();
+        const result = await registroDetalhado.buscarAlimentosPorData(paciente_id, data);
+        
+        if (result.status) {
+            console.log(`✅ Encontrados ${result.total_itens} alimentos para ${data || 'hoje'}`);
+        }
+        
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Erro ao buscar registros detalhados:', error.message);
+        res.status(500).json({ error: 'Erro interno', details: error.message });
+    }
+});
+
+// Buscar alimentos de uma refeição específica
+router.get('/registros-detalhados/:paciente_id/refeicao/:tipo_refeicao/:data?', authMiddleware, async (req, res) => {
+    try {
+        const { paciente_id, tipo_refeicao, data } = req.params;
+        const registroDetalhado = new RegistroAlimentoDetalhado();
+        const result = await registroDetalhado.buscarAlimentosPorRefeicao(paciente_id, tipo_refeicao, data);
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Erro ao buscar alimentos da refeição:', error.message);
+        res.status(500).json({ error: 'Erro interno', details: error.message });
+    }
+});
+
+// Remover um alimento específico
+router.delete('/registros-detalhados/:registro_id/:paciente_id', authMiddleware, async (req, res) => {
+    try {
+        const { registro_id, paciente_id } = req.params;
+        const registroDetalhado = new RegistroAlimentoDetalhado();
+        const result = await registroDetalhado.removerAlimento(registro_id, paciente_id);
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Erro ao remover alimento:', error.message);
+        res.status(500).json({ error: 'Erro interno', details: error.message });
+    }
+});
+
+// Obter estatísticas de consumo detalhadas
+router.get('/registros-detalhados/:paciente_id/estatisticas/:dias?', authMiddleware, async (req, res) => {
+    try {
+        const { paciente_id, dias } = req.params;
+        const registroDetalhado = new RegistroAlimentoDetalhado();
+        const result = await registroDetalhado.obterEstatisticas(paciente_id, parseInt(dias) || 30);
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Erro ao obter estatísticas detalhadas:', error.message);
+        res.status(500).json({ error: 'Erro interno', details: error.message });
+    }
+});
+
+// Adicionar macros manualmente ao registro diário
 
 module.exports = router;

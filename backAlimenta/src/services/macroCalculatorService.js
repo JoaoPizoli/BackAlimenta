@@ -1,5 +1,6 @@
 const Alimento = require('../models/alimento');
 const RegistroDiario = require('../models/registroDiario');
+const RegistroAlimentoDetalhado = require('../models/registroAlimentoDetalhado'); // NOVA LINHA
 
 class MacroCalculatorService {
     constructor() {
@@ -68,13 +69,35 @@ class MacroCalculatorService {
                 macrosCalculados.gordura,
                 opcoes.data_consumo,
                 `${alimento.nome} - ${quantidadeConsumida}g`
-            );
-
-            if (!resultadoRegistro.status) {
+            );            if (!resultadoRegistro.status) {
                 return { 
                     status: false, 
                     error: 'Erro ao registrar consumo: ' + resultadoRegistro.error 
                 };
+            }
+
+            // 4. NOVO: Salvar registro detalhado individual
+            const registroDetalhado = new RegistroAlimentoDetalhado();
+            const resultadoDetalhado = await registroDetalhado.adicionarAlimento({
+                paciente_id,
+                data_consumo: opcoes.data_consumo,
+                hora_consumo: opcoes.hora_consumo,
+                tipo_refeicao: opcoes.tipo_refeicao || 'outro',
+                alimento_nome: alimento.nome,
+                alimento_id_memory: alimento.id,
+                quantidade_gramas: quantidadeConsumida,
+                calorias_item: macrosCalculados.calorias,
+                proteinas_item: macrosCalculados.proteinas,
+                carboidratos_item: macrosCalculados.carboidratos,
+                gordura_item: macrosCalculados.gordura,
+                origem_registro: opcoes.origem || 'ia_audio',
+                observacoes: opcoes.observacoes,
+                confianca_ia: opcoes.confianca_ia
+            });
+
+            if (!resultadoDetalhado.status) {
+                console.warn('⚠️ Erro ao salvar registro detalhado:', resultadoDetalhado.error);
+                // Não falhar a operação toda se o detalhado der erro
             }
 
             const resultado = {
@@ -93,6 +116,7 @@ class MacroCalculatorService {
                     gordura: alimento.gordura
                 },                registro_criado: {
                     registro_id: resultadoRegistro.registro_id,
+                    registro_detalhado_id: resultadoDetalhado.registro_id || null,
                     data_consumo: opcoes.data_consumo || new Date().toISOString().split('T')[0],
                     hora_consumo: opcoes.hora_consumo || new Date().toTimeString().split(' ')[0],
                     tipo_refeicao: opcoes.tipo_refeicao || 'outro',

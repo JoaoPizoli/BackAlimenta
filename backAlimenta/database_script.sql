@@ -95,6 +95,33 @@ CREATE TABLE dieta_alimento (
     INDEX idx_dieta_alimento_nome (alimento_nome)
 );
 
+-- Tabela de Registros Detalhados por Alimento (NOVA TABELA PARA RESOLVER PROBLEMA)
+-- Esta tabela armazena cada alimento consumido individualmente
+CREATE TABLE registro_alimento_detalhado (
+    registro_id INT AUTO_INCREMENT PRIMARY KEY,
+    paciente_id INT NOT NULL,
+    data_consumo DATE NOT NULL,
+    hora_consumo TIME DEFAULT NULL,
+    tipo_refeicao ENUM('cafe_manha', 'almoco', 'lanches', 'janta', 'outro') DEFAULT 'outro',
+    alimento_nome VARCHAR(255) NOT NULL,
+    alimento_id_memory INT, -- Referência ao ID no banco in-memory
+    quantidade_gramas DECIMAL(8,2) NOT NULL,
+    calorias_item DECIMAL(8,2) NOT NULL,
+    proteinas_item DECIMAL(8,2) NOT NULL,
+    carboidratos_item DECIMAL(8,2) NOT NULL,
+    gordura_item DECIMAL(8,2) NOT NULL,
+    origem_registro ENUM('ia_audio', 'manual', 'importado') DEFAULT 'manual',
+    observacoes TEXT,
+    confianca_ia TINYINT DEFAULT NULL COMMENT 'Confiança da IA (0-100)',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (paciente_id) REFERENCES paciente(paciente_id) ON DELETE CASCADE,
+    INDEX idx_registro_paciente_data (paciente_id, data_consumo),
+    INDEX idx_registro_data (data_consumo),
+    INDEX idx_registro_refeicao (tipo_refeicao),
+    INDEX idx_registro_alimento (alimento_nome)
+);
+
 -- Inserir alguns dados de exemplo para teste
 
 -- Inserir nutricionista de exemplo
