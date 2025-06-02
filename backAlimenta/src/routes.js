@@ -1001,69 +1001,30 @@ router.put('/dieta/desativar/:dieta_id/:paciente_id', authMiddleware, async (req
     }
 });
 
-// ===== ROTAS DE IA E PROCESSAMENTO DE ÁUDIO (ATUALIZADAS) =====
-// REMOVIDAS: As rotas de transcrição de áudio foram removidas.
-// Agora o Flutter faz transcrição local e envia apenas o texto transcrito via /alimento/buscar-por-transcricao
+// === ROTAS DE DEBUG ===
 
-// ===== ROTAS DE REGISTROS DETALHADOS POR ALIMENTO =====
-
-// Buscar todos os alimentos consumidos em uma data específica (NOVA ROTA PARA RESOLVER PROBLEMA)
-router.get('/registros-detalhados/:paciente_id/:data?', authMiddleware, async (req, res) => {
+// Contar linhas na tabela dieta para um paciente (para testes)
+router.get('/debug/contar-dietas/:paciente_id', authMiddleware, async (req, res) => {
     try {
-        const { paciente_id, data } = req.params;
-        const registroDetalhado = new RegistroAlimentoDetalhado();
-        const result = await registroDetalhado.buscarAlimentosPorData(paciente_id, data);
+        const { paciente_id } = req.params;
         
-        if (result.status) {
-            console.log(`✅ Encontrados ${result.total_itens} alimentos para ${data || 'hoje'}`);
-        }
+        const count = await knex('dieta')
+            .where({ paciente_id: parseInt(paciente_id) })
+            .count('* as total')
+            .first();
         
-        res.json(result);
+        res.json({
+            success: true,
+            paciente_id: paciente_id,
+            count: count.total
+        });
     } catch (error) {
-        console.error('❌ Erro ao buscar registros detalhados:', error.message);
-        res.status(500).json({ error: 'Erro interno', details: error.message });
+        console.error('❌ Erro ao contar dietas:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro interno do servidor' 
+        });
     }
 });
-
-// Buscar alimentos de uma refeição específica
-router.get('/registros-detalhados/:paciente_id/refeicao/:tipo_refeicao/:data?', authMiddleware, async (req, res) => {
-    try {
-        const { paciente_id, tipo_refeicao, data } = req.params;
-        const registroDetalhado = new RegistroAlimentoDetalhado();
-        const result = await registroDetalhado.buscarAlimentosPorRefeicao(paciente_id, tipo_refeicao, data);
-        res.json(result);
-    } catch (error) {
-        console.error('❌ Erro ao buscar alimentos da refeição:', error.message);
-        res.status(500).json({ error: 'Erro interno', details: error.message });
-    }
-});
-
-// Remover um alimento específico
-router.delete('/registros-detalhados/:registro_id/:paciente_id', authMiddleware, async (req, res) => {
-    try {
-        const { registro_id, paciente_id } = req.params;
-        const registroDetalhado = new RegistroAlimentoDetalhado();
-        const result = await registroDetalhado.removerAlimento(registro_id, paciente_id);
-        res.json(result);
-    } catch (error) {
-        console.error('❌ Erro ao remover alimento:', error.message);
-        res.status(500).json({ error: 'Erro interno', details: error.message });
-    }
-});
-
-// Obter estatísticas de consumo detalhadas
-router.get('/registros-detalhados/:paciente_id/estatisticas/:dias?', authMiddleware, async (req, res) => {
-    try {
-        const { paciente_id, dias } = req.params;
-        const registroDetalhado = new RegistroAlimentoDetalhado();
-        const result = await registroDetalhado.obterEstatisticas(paciente_id, parseInt(dias) || 30);
-        res.json(result);
-    } catch (error) {
-        console.error('❌ Erro ao obter estatísticas detalhadas:', error.message);
-        res.status(500).json({ error: 'Erro interno', details: error.message });
-    }
-});
-
-// Adicionar macros manualmente ao registro diário
 
 module.exports = router;
