@@ -736,27 +736,26 @@ router.put('/pacientes/:paciente_id/status', authMiddleware, async (req, res) =>
     }
 });
 
-// Rota para remover paciente
+// Rota para remover paciente (deletar permanentemente)
 router.delete('/pacientes/:paciente_id', authMiddleware, async (req, res) => {
     try {
         const { paciente_id } = req.params;
         
-        console.log('🗑️ Removendo paciente:', { paciente_id });
+        console.log('🗑️ Deletando paciente permanentemente:', { paciente_id });
         
-        // Em vez de deletar, vamos desativar o paciente
         const paciente = new Paciente();
-        const result = await paciente.updatePaciente(paciente_id, { ativo: false });
+        const result = await paciente.deletePaciente(paciente_id);
         
         if (result.status) {
             return res.json({ 
                 status: true, 
-                message: 'Paciente removido com sucesso' 
+                message: 'Paciente deletado permanentemente com sucesso' 
             });
         } else {
             return res.status(400).json(result);
         }
     } catch (error) {
-        console.error('❌ Erro ao remover paciente:', error);
+        console.error('❌ Erro ao deletar paciente:', error);
         return res.status(500).json({ status: false, message: 'Erro interno do servidor' });
     }
 });

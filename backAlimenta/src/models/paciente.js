@@ -106,15 +106,13 @@ class Paciente{
             console.error(`Erro ao buscar paciente pelo Id da Nutricionista: ${err.message}`);
             return { status: false, err: err.message };
         }
-    }
-
-    async buscarPacientesPorNutri(nutri_id){
-        console.log('Buscando TODOS os Pacientes pelo Id da Nutricionista')
+    }    async buscarPacientesPorNutri(nutri_id){
+        console.log('Buscando TODOS os Pacientes (ativos e desativados) pelo Id da Nutricionista')
 
         try {
             const pacientes = await knex('paciente')
             .select(['paciente_id', 'nome','email','telefone','peso','ativo', 'nutri_id'])
-            .where({nutri_id: nutri_id, ativo: true})
+            .where({nutri_id: nutri_id})
 
             return pacientes.length > 0 
                 ? {status: true, pacientes: pacientes}
@@ -200,6 +198,45 @@ class Paciente{
             }
         } catch (error) {
             console.error(`❌ Erro ao atualizar paciente: ${error.message}`);
+            return { status: false, error: error.message };
+        }
+    }    async deletePaciente(paciente_id) {
+        try {
+            console.log(`🗑️ Deletando paciente permanentemente: ${paciente_id}`);
+
+            // Verificar se o paciente existe
+            const pacienteExiste = await knex('paciente').where({ paciente_id }).first();
+            if (!pacienteExiste) {
+                console.log(`❌ Paciente ${paciente_id} não encontrado`);
+                return { status: false, message: 'Paciente não encontrado' };
+            }
+
+            console.log(`📋 Paciente encontrado:`, pacienteExiste);
+
+            // Deletar registros relacionados primeiro
+            console.log(`🗑️ Deletando registros diários do paciente ${paciente_id}...`);
+            const deletedDiarios = await knex('registro_diario').where({ paciente_id }).del();
+            console.log(`✅ ${deletedDiarios} registros diários deletados`);
+
+            console.log(`🗑️ Deletando registros detalhados do paciente ${paciente_id}...`);
+            const deletedDetalhados = await knex('registro_alimento_detalhado').where({ paciente_id }).del();
+            console.log(`✅ ${deletedDetalhados} registros detalhados deletados`);
+            
+            // Deletar o paciente
+            console.log(`🗑️ Deletando paciente ${paciente_id}...`);
+            const deletedRows = await knex('paciente').where({ paciente_id }).del();
+            console.log(`✅ ${deletedRows} paciente(s) deletado(s)`);
+
+            if (deletedRows > 0) {
+                console.log(`✅ Paciente ${paciente_id} deletado com sucesso`);
+                return { status: true, message: 'Paciente deletado com sucesso' };
+            } else {
+                console.log(`❌ Falha ao deletar paciente ${paciente_id}`);
+                return { status: false, message: 'Falha ao deletar paciente' };
+            }
+        } catch (error) {
+            console.error(`❌ Erro ao deletar paciente: ${error.message}`);
+            console.error(`❌ Stack trace:`, error.stack);
             return { status: false, error: error.message };
         }
     }
