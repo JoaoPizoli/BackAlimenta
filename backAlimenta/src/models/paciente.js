@@ -157,25 +157,49 @@ class Paciente{
         } catch (error) {
             console.error(`Erro no login do paciente: ${error.message}`);
             return { status: false, error: error.message };
-        }
-    }
-
+        }    }
+    
     async updatePaciente(paciente_id, dadosParaAtualizar) {
         try {
-            console.log(`Atualizando paciente ID: ${paciente_id}`);
+            console.log(`🔍 Atualizando paciente ID: ${paciente_id}`, dadosParaAtualizar);
             
-            const resultado = await knex('paciente')
+            // Primeiro, verificar se o paciente existe
+            const pacienteExistente = await knex('paciente')
+                .select(['paciente_id'])
                 .where({ paciente_id })
-                .update(dadosParaAtualizar)
-                .returning(['paciente_id', 'nome', 'email', 'telefone', 'peso', 'ativo']);
-
-            if (resultado.length > 0) {
-                return { status: true, paciente: resultado[0] };
-            } else {
+                .first();
+                
+            console.log(`🔍 Resultado da busca:`, pacienteExistente);
+                
+            if (!pacienteExistente) {
+                console.log(`❌ Paciente ${paciente_id} não encontrado na verificação inicial`);
                 return { status: false, message: 'Paciente não encontrado' };
             }
+            
+            console.log(`✅ Paciente encontrado, prosseguindo com atualização...`);
+            
+            // Atualizar o paciente
+            const rowsAffected = await knex('paciente')
+                .where({ paciente_id })
+                .update(dadosParaAtualizar);
+                
+            console.log(`📊 Linhas afetadas: ${rowsAffected}`);
+            
+            if (rowsAffected > 0) {
+                // Buscar o paciente atualizado
+                const pacienteAtualizado = await knex('paciente')
+                    .select(['paciente_id', 'nome', 'email', 'telefone', 'peso', 'ativo'])
+                    .where({ paciente_id })
+                    .first();
+                    
+                console.log(`✅ Paciente atualizado:`, pacienteAtualizado);
+                return { status: true, paciente: pacienteAtualizado };
+            } else {
+                console.log(`❌ Nenhuma linha foi afetada`);
+                return { status: false, message: 'Nenhuma alteração foi feita' };
+            }
         } catch (error) {
-            console.error(`Erro ao atualizar paciente: ${error.message}`);
+            console.error(`❌ Erro ao atualizar paciente: ${error.message}`);
             return { status: false, error: error.message };
         }
     }

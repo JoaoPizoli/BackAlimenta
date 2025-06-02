@@ -2,8 +2,10 @@ const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcryptjs'); // Adicionando import do bcrypt
 const router = express.Router();
 const authMiddleware = require('./middleware/auth');
+const knex = require('./database/connection'); // Adicionando import do knex
 
 const Nutri = require('./models/nutri');
 const Paciente = require('./models/paciente');
@@ -557,6 +559,168 @@ router.get('/nutri/pacientes/:nutri_id', async (req, res) => {
     const paciente = new Paciente();
     const result = await paciente.buscarPacientesPorNutri(req.params.nutri_id);
     return res.json(result);
+});
+
+// Rota para atualizar dados do paciente
+router.put('/pacientes/:paciente_id', authMiddleware, async (req, res) => {
+    try {
+        const { paciente_id } = req.params;
+        const { name, email, phone } = req.body;
+        
+        console.log('📝 Atualizando paciente:', { 
+            paciente_id, 
+            paciente_id_type: typeof paciente_id,
+            name, 
+            email, 
+            phone 
+        });
+        
+        // Verificar se o paciente existe primeiro
+        const pacienteExistente = await knex('paciente')
+            .select(['paciente_id', 'nome', 'email'])
+            .where({ paciente_id: parseInt(paciente_id) })
+            .first();
+            
+        console.log('🔍 Paciente existente:', pacienteExistente);
+        
+        if (!pacienteExistente) {
+            return res.status(404).json({ 
+                status: false, 
+                message: `Paciente com ID ${paciente_id} não encontrado` 
+            });
+        }
+        
+        const dadosParaAtualizar = {};
+        if (name) dadosParaAtualizar.nome = name;
+        if (email) dadosParaAtualizar.email = email;
+        if (phone) dadosParaAtualizar.telefone = phone;
+        
+        console.log('📦 Dados para atualizar:', dadosParaAtualizar);
+        
+        const paciente = new Paciente();
+        const result = await paciente.updatePaciente(parseInt(paciente_id), dadosParaAtualizar);
+        
+        console.log('✅ Resultado da atualização:', result);
+        
+        return res.json(result);
+    } catch (error) {
+        console.error('❌ Erro ao atualizar paciente:', error);
+        return res.status(500).json({ status: false, message: 'Erro interno do servidor' });
+    }
+});
+
+// Rota para alterar senha do paciente
+router.post('/pacientes/alterar-senha', authMiddleware, async (req, res) => {
+    try {
+        const { email, newPassword } = req.body;
+        
+        console.log('🔐 Dados recebidos:', { email, newPassword: newPassword ? '***' : 'undefined' });
+        console.log('🔐 Tipo do email:', typeof email);
+        
+        if (!email || !newPassword) {
+            console.log('❌ Dados incompletos:', { email: !!email, newPassword: !!newPassword });
+            return res.status(400).json({ 
+                status: false, 
+                message: 'Email e nova senha são obrigatórios' 
+            });
+        }
+        
+        console.log('🔍 Buscando paciente com email:', email);
+        
+        // Buscar paciente pelo email
+        const pacienteBusca = await knex('paciente')
+            .select(['paciente_id', 'nome', 'email'])
+            .where({ email })
+            .first();
+            
+        console.log('🔍 Resultado da busca:', pacienteBusca);
+        
+        if (!pacienteBusca) {
+            // Vamos verificar se existe algum paciente com email similar
+            const emailsSimilares = await knex('paciente')
+                .select(['email'])
+                .whereRaw('LOWER(email) LIKE ?', [`%${email.toLowerCase()}%`])
+                .limit(5);
+                
+            console.log('📧 Emails similares encontrados:', emailsSimilares);
+            
+            return res.status(400).json({ 
+                status: false, 
+                message: 'Paciente não encontrado' 
+            });
+        }
+          // Hash da nova senha
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        
+        // Atualizar senha
+        const paciente = new Paciente();
+        const result = await paciente.updatePaciente(pacienteBusca.paciente_id, { 
+            senha: hashedPassword 
+        });
+        
+        if (result.status) {
+            return res.json({ 
+                status: true, 
+                message: 'Senha alterada com sucesso' 
+            });
+        } else {
+            return res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('❌ Erro ao alterar senha:', error);
+        return res.status(500).json({ status: false, message: 'Erro interno do servidor' });
+    }
+});
+
+// Rota para alterar status do paciente
+router.put('/pacientes/:paciente_id/status', authMiddleware, async (req, res) => {
+    try {
+        const { paciente_id } = req.params;
+        const { status } = req.body;
+        
+        console.log('📋 Alterando status do paciente:', { paciente_id, status });
+        
+        const ativo = status === 'active';
+        const paciente = new Paciente();
+        const result = await paciente.updatePaciente(paciente_id, { ativo });
+        
+        if (result.status) {
+            return res.json({ 
+                status: true, 
+                message: `Paciente ${status === 'active' ? 'ativado' : 'desativado'} com sucesso` 
+            });
+        } else {
+            return res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('❌ Erro ao alterar status:', error);
+        return res.status(500).json({ status: false, message: 'Erro interno do servidor' });
+    }
+});
+
+// Rota para remover paciente
+router.delete('/pacientes/:paciente_id', authMiddleware, async (req, res) => {
+    try {
+        const { paciente_id } = req.params;
+        
+        console.log('🗑️ Removendo paciente:', { paciente_id });
+        
+        // Em vez de deletar, vamos desativar o paciente
+        const paciente = new Paciente();
+        const result = await paciente.updatePaciente(paciente_id, { ativo: false });
+        
+        if (result.status) {
+            return res.json({ 
+                status: true, 
+                message: 'Paciente removido com sucesso' 
+            });
+        } else {
+            return res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('❌ Erro ao remover paciente:', error);
+        return res.status(500).json({ status: false, message: 'Erro interno do servidor' });
+    }
 });
 
 // Rotas de Alimentos (SQLite In-Memory com dados TACO)
