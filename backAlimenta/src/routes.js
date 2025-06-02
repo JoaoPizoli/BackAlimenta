@@ -444,55 +444,93 @@ router.post('/alimentos/calcular-macros', async (req, res) => {
 });
 
 // Buscar todos os alimentos detalhados por data (para persistência)
-router.get('/alimentos-detalhados/data/:paciente_id', async (req, res) => {
+router.get('/alimentos-detalhados/data/:paciente_id', authMiddleware, async (req, res) => {
     try {
         const { paciente_id } = req.params;
         const { data } = req.query;
         
-        const registroDetalhado = new RegistroAlimentoDetalhado();
-        const result = await registroDetalhado.buscarAlimentosPorData(paciente_id, data);
+        console.log('🍽️ BACKEND: Rota alimentos-detalhados chamada');
+        console.log('🍽️ BACKEND: paciente_id:', paciente_id, 'tipo:', typeof paciente_id);
+        console.log('🍽️ BACKEND: data query:', data, 'tipo:', typeof data);
+        console.log('🍽️ BACKEND: req.query completo:', req.query);
+        console.log('🍽️ BACKEND: req.params completo:', req.params);
+        console.log('🍽️ BACKEND: userId do token:', req.userId);
         
-        if (result.status) {
-            console.log(`✅ Encontrados ${result.total_itens} alimentos para ${data || 'hoje'}`);
+        const registroDetalhado = new RegistroAlimentoDetalhado();
+        console.log('🍽️ BACKEND: Instância RegistroAlimentoDetalhado criada');
+        
+        const result = await registroDetalhado.buscarAlimentosPorData(paciente_id, data);
+        console.log('🍽️ BACKEND: Resultado do buscarAlimentosPorData:', JSON.stringify(result, null, 2));
+          if (result.status) {
+            console.log(`✅ BACKEND: Encontrados ${result.total_itens} alimentos para ${data || 'hoje'}`);
+            console.log('✅ BACKEND: Estrutura das refeições:', Object.keys(result.refeicoes));
             
-            // Calcular totais por refeição para o Flutter
-            const totaisPorRefeicao = {};
+            // Transformar dados para o formato esperado pelo frontend
+            const foods = [];
+            
+            // Iterar por todas as refeições
             Object.keys(result.refeicoes).forEach(tipoRefeicao => {
-                const alimentos = result.refeicoes[tipoRefeicao];
-                totaisPorRefeicao[tipoRefeicao] = {
-                    total_calorias: alimentos.reduce((sum, item) => sum + (parseFloat(item.calorias_item) || 0), 0),
-                    total_proteinas: alimentos.reduce((sum, item) => sum + (parseFloat(item.proteinas_item) || 0), 0),
-                    total_carboidratos: alimentos.reduce((sum, item) => sum + (parseFloat(item.carboidratos_item) || 0), 0),
-                    total_gordura: alimentos.reduce((sum, item) => sum + (parseFloat(item.gordura_item) || 0), 0),
-                    alimentos: alimentos
-                };
+                const alimentosRefeicao = result.refeicoes[tipoRefeicao];
+                console.log(`🍽️ BACKEND: Processando ${tipoRefeicao} com ${alimentosRefeicao.length} alimentos`);
+                
+                alimentosRefeicao.forEach(alimento => {
+                    const foodItem = {
+                        refeicao: tipoRefeicao,
+                        nome: alimento.alimento_nome,
+                        quantidade: `${alimento.quantidade_gramas}g`,
+                        calorias: parseFloat(alimento.calorias_item) || 0,
+                        proteinas: parseFloat(alimento.proteinas_item) || 0,
+                        carboidratos: parseFloat(alimento.carboidratos_item) || 0,
+                        gorduras: parseFloat(alimento.gordura_item) || 0,
+                        horario: alimento.hora_consumo
+                    };
+                    foods.push(foodItem);
+                    console.log('🍽️ BACKEND: Alimento processado:', foodItem);
+                });
             });
             
-            // Calcular totais gerais do dia
-            const totaisGerais = {
-                total_calorias: Object.values(totaisPorRefeicao).reduce((sum, refeicao) => sum + refeicao.total_calorias, 0),
-                total_proteinas: Object.values(totaisPorRefeicao).reduce((sum, refeicao) => sum + refeicao.total_proteinas, 0),
-                total_carboidratos: Object.values(totaisPorRefeicao).reduce((sum, refeicao) => sum + refeicao.total_carboidratos, 0),
-                total_gordura: Object.values(totaisPorRefeicao).reduce((sum, refeicao) => sum + refeicao.total_gordura, 0)
+            // Calcular totais gerais
+            const totals = {
+                calories: foods.reduce((sum, food) => sum + food.calorias, 0),
+                proteins: foods.reduce((sum, food) => sum + food.proteinas, 0),
+                carbs: foods.reduce((sum, food) => sum + food.carboidratos, 0),
+                fats: foods.reduce((sum, food) => sum + food.gorduras, 0)
             };
             
+            console.log('🍽️ BACKEND: Totais calculados:', totals);
+            console.log('🍽️ BACKEND: Total de foods:', foods.length);
+            
+            const response = {
+                success: true,
+                message: `${foods.length} alimento(s) encontrado(s)`,
+                foods: foods,
+                totals: totals
+            };
+            
+            console.log('🍽️ BACKEND: Enviando resposta:', JSON.stringify(response, null, 2));
+            return res.json(response);        } else {
+            console.log('⚠️ BACKEND: Nenhum alimento encontrado');
+            console.log('⚠️ BACKEND: result.status:', result.status);
+            console.log('⚠️ BACKEND: result.message:', result.message);
+            
             return res.json({
-                status: true,
-                data: {
-                    data: result.data,
-                    paciente_id: result.paciente_id,
-                    total_itens: result.total_itens,
-                    totais_gerais: totaisGerais,
-                    refeicoes: totaisPorRefeicao,
-                    alimentos: result.refeicoes // manter compatibilidade
-                }
+                success: false,
+                message: result.message || 'Nenhum alimento encontrado',
+                foods: [],
+                totals: { calories: 0, proteins: 0, carbs: 0, fats: 0 }
             });
         }
         
-        res.json(result);
     } catch (error) {
-        console.error('❌ Erro ao buscar alimentos detalhados:', error.message);
-        res.status(500).json({ error: 'Erro interno', details: error.message });
+        console.error('❌ BACKEND: Erro ao buscar alimentos detalhados:', error.message);
+        console.error('❌ BACKEND: Stack trace:', error.stack);
+        res.status(500).json({ 
+            success: false,
+            message: 'Erro interno do servidor',
+            error: error.message,
+            foods: [],
+            totals: { calories: 0, proteins: 0, carbs: 0, fats: 0 }
+        });
     }
 });
 
@@ -720,6 +758,134 @@ router.delete('/pacientes/:paciente_id', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('❌ Erro ao remover paciente:', error);
         return res.status(500).json({ status: false, message: 'Erro interno do servidor' });
+    }
+});
+
+// Rota para salvar/atualizar macros de um paciente
+router.put('/pacientes/:paciente_id/macros', authMiddleware, async (req, res) => {
+    try {
+        const { paciente_id } = req.params;
+        const { calories, proteins, carbs, fats } = req.body;
+        const nutri_id = req.userId;
+
+        console.log('📊 Salvando macros para paciente:', { paciente_id, calories, proteins, carbs, fats, nutri_id });
+
+        // Validar se o paciente existe e pertence à nutricionista
+        const verificarPaciente = await knex('paciente')
+            .select('*')
+            .where({ paciente_id: parseInt(paciente_id), nutri_id })
+            .first();
+
+        if (!verificarPaciente) {
+            return res.status(404).json({
+                success: false,
+                message: 'Paciente não encontrado ou não pertence a esta nutricionista'
+            });
+        }
+
+        // Verificar se já existe uma dieta para este paciente
+        const dietaExistente = await knex('dieta')
+            .select('*')
+            .where({ paciente_id: parseInt(paciente_id) })
+            .first();
+
+        let resultado;        if (dietaExistente) {
+            // Atualizar dieta existente
+            resultado = await knex('dieta')
+                .where({ paciente_id: parseInt(paciente_id) })
+                .update({
+                    calorias: calories,
+                    proteina: proteins,
+                    carbo: carbs,
+                    gordura: fats,
+                    updated_at: knex.fn.now()
+                })
+                .returning('*');
+            
+            console.log('✅ Dieta atualizada:', resultado[0]);        } else {
+            // Criar nova dieta
+            resultado = await knex('dieta')
+                .insert({
+                    paciente_id: parseInt(paciente_id),
+                    calorias: calories,
+                    proteina: proteins,
+                    carbo: carbs,
+                    gordura: fats,
+                    nutri_id: nutri_id
+                })
+                .returning('*');
+            
+            console.log('✅ Nova dieta criada:', resultado[0]);
+        }
+
+        res.json({
+            success: true,
+            message: dietaExistente ? 'Macros atualizados com sucesso!' : 'Macros definidos com sucesso!',
+            data: resultado[0]
+        });
+
+    } catch (error) {
+        console.error('❌ Erro ao salvar macros:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro interno do servidor',
+            error: error.message
+        });
+    }
+});
+
+// Rota para buscar macros de um paciente
+router.get('/pacientes/:paciente_id/macros', authMiddleware, async (req, res) => {
+    try {
+        const { paciente_id } = req.params;
+        const nutri_id = req.userId;
+
+        console.log('🔍 Buscando macros para paciente:', { paciente_id, nutri_id });
+
+        // Verificar se o paciente existe e pertence à nutricionista
+        const verificarPaciente = await knex('paciente')
+            .select('*')
+            .where({ paciente_id: parseInt(paciente_id), nutri_id })
+            .first();
+
+        if (!verificarPaciente) {
+            return res.status(404).json({
+                success: false,
+                message: 'Paciente não encontrado ou não pertence a esta nutricionista'
+            });
+        }
+
+        // Buscar macros do paciente
+        const macros = await knex('dieta')
+            .select('*')
+            .where({ paciente_id: parseInt(paciente_id) })
+            .first();
+
+        if (!macros) {
+            return res.json({
+                success: true,
+                message: 'Nenhuma meta de macros definida para este paciente',
+                data: null
+            });
+        }        res.json({
+            success: true,
+            data: {
+                calories: macros.calorias,
+                proteins: macros.proteina,
+                carbs: macros.carbo,
+                fats: macros.gordura,
+                created_at: macros.created_at,
+                updated_at: macros.updated_at
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Erro ao buscar macros:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro interno do servidor',
+            error: error.message
+        });
     }
 });
 
